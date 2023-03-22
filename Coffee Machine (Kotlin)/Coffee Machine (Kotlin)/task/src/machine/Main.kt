@@ -161,28 +161,6 @@ class CoffeeMachine(
     }
 }
 
-
-
-//fun fillResources(cm : CoffeeMachine) : CoffeeMachine {
-//    println("Write how many ml of water you want to add:")
-//    val water = readln().toInt()
-//    println("Write how many ml of milk you want to add:")
-//    val milk = readln().toInt()
-//    println("Write how many grams of coffee beans you want to add:")
-//    val beans = readln().toInt()
-//    println("Write how many disposable cups you want to add:")
-//    val cups = readln().toInt()
-//
-//    return CoffeeMachine(
-//        cm.water + water,
-//        cm.milk + milk,
-//        cm.beans + beans,
-//        cm.cups + cups,
-//        cm.money
-//    )
-//}
-
-
 fun main() {
 
     val cm = CoffeeMachine(400, 540, 120, 9, 550)
