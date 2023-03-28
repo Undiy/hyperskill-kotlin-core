@@ -18,23 +18,28 @@ fun validateFile(i: Int, file: File): File {
     return file
 }
 fun readAndValidateWords(file: File): List<String> {
-    return file.readLines().map(String::lowercase) .also { words ->
+    return file.readLines().map(String::uppercase) .also { words ->
         words.count(::isWordInvalid).let {
             if (it > 0) error("$it invalid words were found in the ${file.name} file.")
         }
     }
 }
 
-fun gameLoop(secret: String, words : Set<String>): Boolean {
+fun gameLoop(secret: String, words : Set<String>) = gameLoopRec(secret, words, emptyList(), emptySet())
+fun gameLoopRec(secret: String, words : Set<String>, hints: List<String>, missingLetters: Set<Char>): Int {
     println("\nInput a 5-letter word:")
-    val input = readln().lowercase()
+    val input = readln().uppercase()
     if (input == secret) {
+        println()
+        hints.forEach(::println)
+        secret.forEach { print(color(it.toString(), COLOR_GREEN)) }
+        println()
         println("\nCorrect!")
-        return false
+        return hints.size + 1
     }
-    if (input == "exit") {
+    if (input == "EXIT") {
         println("\nThe game is over.")
-        return false
+        return 0
     } else if (input.length != 5) {
         println("The input isn't a 5-letter word.")
     } else if (hasWordInvalidSymbols(input)) {
@@ -44,16 +49,33 @@ fun gameLoop(secret: String, words : Set<String>): Boolean {
     } else if (input !in words) {
         println("The input word isn't included in my words list.")
     } else {
-        println(input.mapIndexed { i, c ->
+        val (newHint, newMissingLetters) = input.foldIndexed(Pair(emptyList<String>(), missingLetters)) { i, acc, c ->
+            val (hint, missing) = acc
             when (c) {
-                secret[i] -> c.uppercaseChar()
-                in secret -> c
-                else -> '_'
+                secret[i] -> Pair(hint + color(c.toString(), COLOR_GREEN), missing)
+                in secret -> Pair(hint + color(c.toString(), COLOR_YELLOW), missing)
+                else -> Pair(hint + color(c.toString(), COLOR_GREY), missing + c)
             }
-        }.joinToString(""))
+        }
+        val newHints = hints + newHint.joinToString("")
+
+        println()
+        newHints.forEach(::println)
+        println()
+        println(color(newMissingLetters.map(Char::uppercaseChar).sorted().joinToString(""), COLOR_AZURE))
+        return gameLoopRec(secret, words, newHints, newMissingLetters)
     }
-    return true
+    // get input one more time
+    return gameLoopRec(secret, words, hints, missingLetters)
 }
+
+const val COLOR_RESET = "\u001B[0m"
+const val COLOR_GREEN = "\u001B[48:5:10m"
+const val COLOR_YELLOW = "\u001B[48:5:11m"
+const val COLOR_GREY = "\u001B[48:5:7m"
+const val COLOR_AZURE = "\u001B[48:5:14m"
+
+fun color(str: String, color:String): String = "$color$str$COLOR_RESET"
 
 fun main(args: Array<String>) {
     if (args.size != 2) {
@@ -69,6 +91,15 @@ fun main(args: Array<String>) {
     println("Words Virtuoso")
 
     val secret = candidates.random()
+    val start = System.currentTimeMillis()
 
-    while (gameLoop(secret, words)) {}
+    val tries = gameLoop(secret, words)
+
+    val seconds = (System.currentTimeMillis() - start) / 1000
+
+    if (tries == 1) {
+        println("Amazing luck! The solution was found at once.")
+    } else if (tries > 1) {
+        println("The solution was found after $tries tries in $seconds seconds.")
+    }
 }
