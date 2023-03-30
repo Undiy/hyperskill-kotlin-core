@@ -6,6 +6,7 @@
 !**/task/**/*.kt
 **/task/test/
 !*.txt
+!*.gradle
 *-classes.txt
 answer.txt
 
