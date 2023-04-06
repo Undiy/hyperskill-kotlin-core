@@ -9,4 +9,5 @@
 !*.gradle
 *-classes.txt
 answer.txt
+**/Topics/**
 
