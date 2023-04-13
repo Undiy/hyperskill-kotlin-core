@@ -1,81 +1,119 @@
 package analyzer
 
 import java.io.File
-import java.nio.file.Files
-import kotlin.io.path.Path
+import kotlin.math.pow
 import kotlin.system.exitProcess
-import kotlin.system.measureNanoTime
 
-fun matchBytes(bytes: ByteArray, pattern: String) : Int {
-    return bytes.zip(pattern.asIterable()).takeWhile { it.first == it.second.code.toByte() }.size
-}
+private const val A = 3
+private const val M = 11
 
-fun substringNaive(s: ByteArray, pattern: String): Int {
-    for (i in 0 .. s.size - pattern.length) {
-        if (matchBytes(s.sliceArray(i until  i + pattern.length), pattern) == pattern.length) {
-            return i
-        }
+class FileTypeAnalyzer(
+    private val file: File,
+    private val patterns: List<FileTypePattern>
+) : Runnable {
+    override fun run() {
+        val fileType = rabinKarp().maxByOrNull { it.priority }?.fileType ?: "Unknown file type"
+        println("${file.name}: $fileType")
     }
-    return -1
-}
 
-fun prefixFunction(s: String): IntArray {
-    val p = IntArray(s.length) { 0 }
-    for (i in 1 until s.length) {
-        var j = p[i - 1]
-        while (true) {
-            if (s[i] == s[j]) {
-                p[i] = j + 1
-                break
+    companion object {
+        fun matchBytes(bytes: ByteArray, pattern: String) : Int {
+            return bytes.zip(pattern.asIterable()).takeWhile { it.first == it.second.code.toByte() }.size
+        }
+
+        fun prefixFunction(s: String): IntArray {
+            val p = IntArray(s.length) { 0 }
+            for (i in 1 until s.length) {
+                var j = p[i - 1]
+                while (true) {
+                    if (s[i] == s[j]) {
+                        p[i] = j + 1
+                        break
+                    }
+                    if (j > 0) {
+                        j = p[j - 1]
+                    } else {
+                        break
+                    }
+                }
             }
-            if (j > 0) {
-                j = p[j - 1]
-            } else {
-                break
+            return p
+        }
+
+        fun rollingHash(a: Int, m: Int): (s: ByteArray) -> Int = {
+            it.foldIndexed(0) { i, acc, b ->
+                acc + b * a.toDouble().pow(i).toInt()
+            } % m
+        }
+    }
+
+    private fun substringKMP(pattern: FileTypePattern): Int {
+        val s = file.readBytes()
+        val p = prefixFunction(pattern.pattern)
+
+        var i = 0
+        while (i + pattern.pattern.length <= s.size) {
+            when(val matchLen = matchBytes(s.sliceArray(i until i + pattern.pattern.length), pattern.pattern)) {
+                p.size -> return i
+                0 -> i++
+                else -> i += matchLen - p[matchLen - 1]
             }
         }
+        return -1
     }
-    return p
+
+    private fun rabinKarp(): Set<FileTypePattern> {
+        val s = file.readBytes()
+        val hashLength = patterns.minOf { it.pattern.length }
+        val hashFn = rollingHash(A, M)
+        val hashPatterns = patterns.groupBy { hashFn(it.pattern.take(hashLength).toByteArray(Charsets.US_ASCII)) }
+
+        if (s.size < hashLength) {
+            return emptySet()
+        }
+        val startIdx = s.lastIndex - hashLength + 1
+        var subhash = hashFn(s.sliceArray(startIdx..s.lastIndex))
+        val matches = mutableSetOf<FileTypePattern>()
+        for (i in startIdx downTo 0) {
+            matches.addAll(hashPatterns.getOrDefault(subhash, emptyList()).filter {
+                val l = it.pattern.length
+                i + l <= s.size && matchBytes(s.sliceArray(i until i + l), it.pattern) == l
+            })
+
+            if (i > 0) {
+                subhash = Math.floorMod(((subhash
+                        - s[i + hashLength - 1] * A.toDouble().pow(hashLength - 1).toInt()) * A + s[i - 1]), M)
+            }
+        }
+
+        return matches
+    }
 }
 
-fun substringKMP(s: ByteArray, pattern : String): Int {
-    val p = prefixFunction(pattern)
+data class FileTypePattern(val priority: Int, val pattern: String, val fileType: String)
 
-    var i = 0
-    while (i + pattern.length <= s.size) {
-        val matchLen = matchBytes(s.sliceArray(i until i + pattern.length), pattern)
-        if (matchLen == p.size) {
-            return i
-        } else {
-            i += matchLen - p[matchLen - 1]
-        }
+fun loadPatterns(file: File): List<FileTypePattern> {
+    val removeQuotes = { s: String -> s.replace("(^\")|(\"$)".toRegex(), "") }
+    return file.useLines { lines ->
+        lines.map { it.split(";") }.filter { it.size == 3 }.map {
+            FileTypePattern(it[0].toInt(), removeQuotes(it[1]), removeQuotes(it[2]))
+        }.sortedByDescending { it.priority }.toList()
     }
-    return -1
 }
 
 fun main(args: Array<String>) {
-    if (args.size != 4) {
+
+    if (args.size != 2) {
         println("Invalid arguments")
         exitProcess(1)
     }
-    val (algo, path, pattern, fileType) = args
+    val (path, patternsPath) = args
 
-    val substringFn = when (algo) {
-        "--naive" -> ::substringNaive
-        "--KMP" -> ::substringKMP
-        else -> {
-            println("Wrong algorithm")
-            exitProcess(1)
-        }
-    }
+    val patterns = loadPatterns(File(patternsPath))
 
-    val time = measureNanoTime {
-        val i = substringFn(Files.readAllBytes(Path(path)), pattern)
-        if (i >= 0) {
-            println(fileType)
-        } else {
-            println("Unknown file type")
-        }
-    }
-    println("It took ${time.toDouble() / 1000_000_000} seconds")
+    File(path).canonicalFile.walkTopDown().filter {it.isFile }.map {
+        val t = Thread(FileTypeAnalyzer(it, patterns))
+        t.start()
+        t
+    }.forEach { it.join() }
 }
